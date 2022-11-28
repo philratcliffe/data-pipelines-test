@@ -1,7 +1,8 @@
-import pymysql
-import csv
-import boto3
 import configparser
+import csv
+
+import boto3
+import pymysql
 
 
 def get_db_connection():
@@ -25,19 +26,33 @@ def get_db_connection():
     return conn
 
 
-conn = get_db_connection()
+def upload_to_s3(filename):
+    parser = configparser.ConfigParser()
+    parser.read("pipeline.conf")
+    access_key = parser.get("aws_boto_credentials", "access_key")
+    secret_key = parser.get("aws_boto_credentials", "secret_key")
+    bucket_name = parser.get("aws_boto_credentials", "bucket_name")
+    s3 = boto3.client(
+        "s3", aws_access_key_id=access_key, aws_secret_access_key=secret_key
+    )
+    s3_file = filename
+    s3.upload_file(filename, bucket_name, s3_file)
 
-m_query = "SELECT * FROM Orders;"
+def extract_mysql_full():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM Orders")
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rows
+
+
+rows = extract_mysql_full()
 local_filename = "order_extract.csv"
-
-m_cursor = conn.cursor()
-m_cursor.execute(m_query)
-results = m_cursor.fetchall()
-
 with open(local_filename, "w") as fp:
     csv_w = csv.writer(fp, delimiter="|")
-    csv_w.writerows(results)
+    csv_w.writerows(rows)
 
-fp.close()
-m_cursor.close()
-conn.close()
+
+upload_to_s3(local_filename)
